@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>加载中... | 计时管理系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode_js@1.0.0/qrcode.min.js"></script>
     <style>
         :root { --bg: #f0f2f5; --card: #ffffff; --text: #2d3436; --primary: #6c5ce7; --orange: #ff9f43; --green: #10ac84; --red: #ee5253; --blue: #54a0ff; --border: #eee; }
         [data-theme='dark'] { --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --border: #333; }
@@ -102,9 +103,10 @@
 </div>
 
 <div id="qrModal" onclick="this.style.display='none'">
-    <div style="background:white; padding:20px; display:inline-block; border-radius:15px;">
-        <img id="qrImg" src="" style="width:200px; height:200px;">
-        <p style="color:#333; margin-top:10px; font-weight:bold;">请扫码核销券码</p>
+    <div style="background:white; padding:20px; display:inline-block; border-radius:15px; vertical-align:middle;">
+        <div id="qrcode"></div>
+        <p id="qrText" style="color:#333; margin-top:10px; font-weight:bold;"></p>
+        <p style="color:#999; font-size:12px;">点击任意位置关闭</p>
     </div>
 </div>
 
@@ -120,7 +122,6 @@
     let isEditing = false;
     const tidx = urlParams.get('t');
 
-    // 初始化先拉取一次数据，确保登录时 adminPass 已就绪
     async function cloudFetch() {
         if (isEditing) return;
         showLoading(true);
@@ -144,18 +145,15 @@
 
     function updateShopUI() {
         document.title = shopName;
-        const aT = document.getElementById('adminTitle');
-        const wT = document.getElementById('welcomeTitle');
+        const aT = document.getElementById('adminTitle'), wT = document.getElementById('welcomeTitle');
         if(aT) aT.innerText = "🎮 " + shopName;
         if(wT) wT.innerText = "🎮 " + shopName;
     }
 
     function shopSettings() {
         checkAuth(() => {
-            const newName = prompt("请输入店铺名称：", shopName);
-            if (newName && newName.trim() !== "") shopName = newName.trim();
-            const newPass = prompt("请输入新管理密码(留空不改)：");
-            if (newPass && newPass.trim() !== "") adminPass = newPass.trim();
+            const nN = prompt("店名：", shopName); if (nN) shopName = nN.trim();
+            const nP = prompt("新密码(留空不改)："); if (nP) adminPass = nP.trim();
             save().then(() => { updateShopUI(); render(); });
         });
     }
@@ -165,34 +163,10 @@
         localTimestamp = Date.now();
         const payload = { tables, members, calls, faqs, shopName, adminPass: adminPass || MASTER_PASS, lastUpdated: localTimestamp };
         try {
-            await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         } catch (e) { alert("同步失败"); }
         showLoading(false);
     }
-
-    function adminLogin() {
-        const input = prompt("请输入管理密码");
-        const correct = adminPass || MASTER_PASS;
-        if(input === correct){
-            isAdmin = true;
-            sessionStorage.setItem('isLoggedIn', 'true');
-            location.reload();
-        } else {
-            alert("密码错误！");
-        }
-    }
-
-    function checkAuth(cb) {
-        const input = prompt("密码验证:");
-        const correct = adminPass || MASTER_PASS;
-        if(input === correct) cb(); else alert("密码错误");
-    }
-
-    function removeNotify(i) { calls.splice(i, 1); save().then(() => { lastCallCount = calls.length; checkNewMessages(); }); }
 
     function checkNewMessages() {
         if (!isAdmin || tidx !== null) return;
@@ -201,15 +175,35 @@
         calls.forEach((msg, i) => {
             const div = document.createElement('div');
             div.className = `notify-item ${msg.type === 'coupon' ? 'coupon' : ''}`;
-            div.innerHTML = `<span><b>${msg.tableName}</b>: ${msg.content}</span>
-                <button class="btn" style="background:white; color:var(--red); padding:4px;" onclick="removeNotify(${i})">完成</button>`;
+            let actionBtn = `<button class="btn" style="background:white; color:var(--red); padding:4px;" onclick="removeNotify(${i})">完成</button>`;
+            // 如果是券码，增加生成二维码按钮
+            if(msg.type === 'coupon') {
+                actionBtn = `<button class="btn" style="background:var(--green); color:white; padding:4px; margin-right:5px;" onclick="showQR('${msg.content}')">生成二维码</button>` + actionBtn;
+            }
+            div.innerHTML = `<span><b>${msg.tableName}</b>: ${msg.content}</span><div>${actionBtn}</div>`;
             stack.appendChild(div);
         });
-        if (calls.length > lastCallCount) {
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance("有新的呼叫"));
-        }
+        if (calls.length > lastCallCount) window.speechSynthesis.speak(new SpeechSynthesisUtterance("有新的呼叫"));
         lastCallCount = calls.length;
     }
+
+    // 关键补丁：生成并显示二维码
+    function showQR(text) {
+        const container = document.getElementById("qrcode");
+        container.innerHTML = ""; // 清空旧的
+        new QRCode(container, {
+            text: text,
+            width: 200,
+            height: 200,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+        document.getElementById("qrText").innerText = "券码内容：" + text;
+        document.getElementById("qrModal").style.display = "block";
+    }
+
+    function removeNotify(i) { calls.splice(i, 1); save().then(() => { lastCallCount = calls.length; checkNewMessages(); }); }
 
     function render() {
         if (!isAdmin || tidx !== null || isEditing) return;
@@ -224,10 +218,7 @@
                 <div class="cost-info">￥${res.cost}</div>
                 <div style="font-size:0.8rem;">价格: <input type="number" style="width:40px" value="${t.price}" onblur="tables[${i}].price=this.value; save()"> 元/h</div>
                 ${!t.startTime ? `<button class="btn btn-main" onclick="start(${i},'normal')">计时</button> <button class="btn btn-main" onclick="askPrepay(${i})">预付</button>` : 
-                `<div style="display:flex; gap:5px; margin-top:10px;">
-                    <button class="btn btn-warn" style="flex:1" onclick="togglePause(${i})">${t.isPaused?'恢复':'暂停'}</button>
-                    <button class="btn btn-danger" style="flex:1" onclick="askCheckout(${i})">结账</button>
-                </div>
+                `<div style="display:flex; gap:5px; margin-top:10px;"><button class="btn btn-warn" style="flex:1" onclick="togglePause(${i})">${t.isPaused?'恢复':'暂停'}</button><button class="btn btn-danger" style="flex:1" onclick="askCheckout(${i})">结账</button></div>
                 <button class="btn btn-adjust" style="width:100%; margin-top:5px;" onclick="adjustTime(${i})">调时</button>`}</div>`;
         }).join('');
     }
@@ -272,33 +263,26 @@
     }
     function callService() { pushMsg("呼叫服务", "call"); }
     function requestCoupon() { const code = prompt("输入券码:"); if(code) pushMsg(code, "coupon"); }
-    function pushMsg(content, type) { 
-        const tableName = tables[tidx]?.name || "未知"; 
-        calls.push({ tableName, content, type }); save().then(() => alert("已发送申请")); 
-    }
+    function pushMsg(content, type) { const tableName = tables[tidx]?.name || "未知"; calls.push({ tableName, content, type }); save().then(() => alert("已发送申请")); }
+    function adminLogin() { const input = prompt("密码"); if(input === (adminPass || MASTER_PASS)){ isAdmin=true; sessionStorage.setItem('isLoggedIn','true'); location.reload(); }}
     function logout() { sessionStorage.clear(); location.reload(); }
     function showLoading(s) { const el = document.getElementById('syncStatus'); if(el) el.style.display = s?'block':'none'; }
     function msToT(ms) { let s = Math.floor(Math.abs(ms) / 1000); return `${Math.floor(s/3600).toString().padStart(2,'0')}:${Math.floor((s%3600)/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
     function toggleTheme() { let t = document.body.getAttribute('data-theme')==='light'?'dark':'light'; document.body.setAttribute('data-theme', t); localStorage.setItem('tp_theme', t); }
+    function checkAuth(cb) { const input = prompt("密码验证:"); if(input === (adminPass || MASTER_PASS)) cb(); else alert("密码错误"); }
 
-    // 初始化流程
     document.body.setAttribute('data-theme', localStorage.getItem('tp_theme') || 'light');
     if(isAdmin) { document.getElementById('adminArea').style.display='block'; document.getElementById('welcomeArea').style.display='none'; }
     if(tidx!==null) { document.getElementById('customerView').style.display='block'; document.getElementById('welcomeArea').style.display='none'; }
     
     cloudFetch();
     setInterval(cloudFetch, 8000);
-    
     setInterval(() => {
         if (isAdmin && tidx === null && !isEditing) render();
         if (tidx !== null) {
-            const t = tables[tidx];
-            if (!t) return;
+            const t = tables[tidx]; if (!t) return;
             const res = calculate(t);
-            const nE = document.getElementById('cust-name');
-            const tE = document.getElementById('cust-timer');
-            const cE = document.getElementById('cust-cost');
-            const sE = document.getElementById('cust-status');
+            const nE = document.getElementById('cust-name'), tE = document.getElementById('cust-timer'), cE = document.getElementById('cust-cost'), sE = document.getElementById('cust-status');
             if(nE) nE.innerText = t.name;
             if(tE) { tE.innerText = res.time; tE.className = 'timer-display ' + res.colorClass; }
             if(cE) cE.innerText = "待支付: ￥" + res.cost;
