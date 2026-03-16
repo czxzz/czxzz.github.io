@@ -31,10 +31,12 @@
         .coupon-btn { background: var(--blue); color: white; padding: 15px; border-radius: 30px; width: 100%; border: none; font-size: 1.1rem; margin-top: 10px; }
         #notifyStack { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; z-index: 20000; }
         .notify-item { background: var(--red); color: white; padding: 12px 15px; border-radius: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .notify-item.coupon { background: var(--blue); }
         #qrModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 40000; text-align: center; padding-top: 100px; }
         #syncStatus { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; z-index: 10000; display: none; }
         .del-btn { position: absolute; top: 10px; right: 10px; cursor: pointer; color: #ccc; font-size: 18px; }
         input, textarea { padding: 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--text); }
+        .color-orange { color: var(--orange); } .color-green { color: var(--green); } .color-red { color: var(--red); }
     </style>
 </head>
 <body data-theme="light">
@@ -87,7 +89,7 @@
         <button class="refresh-btn" onclick="location.reload()">🔄 刷新状态</button>
         <button class="call-btn" onclick="callService()">🔔 呼叫店员</button>
         <button class="coupon-btn" onclick="requestCoupon()">🎫 团购续时/预结账</button>
-        <div class="faq-box">
+        <div class="faq-box" style="margin-top:20px; text-align:left; background:var(--bg); padding:15px; border-radius:15px;">
             <div style="font-weight:bold; margin-bottom:10px; border-left:4px solid var(--primary); padding-left:8px;">常见问题帮助</div>
             <div id="custFaqList"></div>
         </div>
@@ -118,23 +120,20 @@
     let isEditing = false;
     const tidx = urlParams.get('t');
 
-    // 核心：获取云端数据
     async function cloudFetch() {
         if (isEditing) return;
         showLoading(true);
         try {
             const res = await fetch(API_URL + "?nocache=" + Date.now());
             const data = await res.json();
-            
             if (!data.lastUpdated || data.lastUpdated > localTimestamp) {
                 tables = data.tables || [];
                 members = data.members || {};
                 calls = data.calls || [];
                 faqs = data.faqs || [];
                 shopName = data.shopName || "躺平电玩";
-                adminPass = data.adminPass || ""; // 从云端获取保存的密码
+                adminPass = data.adminPass || "";
                 localTimestamp = data.lastUpdated || 0;
-                
                 updateShopUI();
                 render();
                 renderMembers();
@@ -145,39 +144,26 @@
         showLoading(false);
     }
 
-    // 更新界面标题
     function updateShopUI() {
         document.title = shopName;
         if(document.getElementById('adminTitle')) document.getElementById('adminTitle').innerText = "🎮 " + shopName;
         if(document.getElementById('welcomeTitle')) document.getElementById('welcomeTitle').innerText = "🎮 " + shopName;
     }
 
-    // 设置功能：改店名+改密码
     function shopSettings() {
         checkAuth(() => {
-            const newName = prompt("请输入新的店铺名称：", shopName);
+            const newName = prompt("请输入店铺名称：", shopName);
             if (newName && newName.trim() !== "") shopName = newName.trim();
-            
-            const newPass = prompt("请输入新的管理密码：\n(留空则不修改当前密码)");
-            if (newPass && newPass.trim() !== "") {
-                adminPass = newPass.trim();
-                alert("密码已更新，下次登录生效！");
-            }
-            
-            updateShopUI();
-            save();
+            const newPass = prompt("请输入新管理密码(留空不改)：");
+            if (newPass && newPass.trim() !== "") adminPass = newPass.trim();
+            save(); updateShopUI();
         });
     }
 
-    // 核心：保存到云端
     async function save() {
         showLoading(true);
         localTimestamp = Date.now();
-        const payload = { 
-            tables, members, calls, faqs, shopName, 
-            adminPass: adminPass || MASTER_PASS, // 优先保存手动设置的密码
-            lastUpdated: localTimestamp 
-        };
+        const payload = { tables, members, calls, faqs, shopName, adminPass: adminPass || MASTER_PASS, lastUpdated: localTimestamp };
         try {
             await fetch(API_URL, {
                 method: 'POST',
@@ -188,32 +174,6 @@
         showLoading(false);
     }
 
-    // 登录校验逻辑
-    function adminLogin() {
-        const input = prompt("请输入管理密码");
-        const correctPass = adminPass || MASTER_PASS; // 优先比对云端密码
-        
-        if(input === correctPass){
-            isAdmin = true;
-            sessionStorage.setItem('isLoggedIn', 'true');
-            location.reload();
-        } else {
-            alert("密码错误！");
-        }
-    }
-
-    function checkAuth(cb) {
-        if(isAdmin) cb();
-        else {
-            const input = prompt("操作权限验证，请输入密码：");
-            const correctPass = adminPass || MASTER_PASS;
-            if(input === correctPass) cb();
-            else alert("密码错误，无法操作");
-        }
-    }
-
-    // --- 以下为业务逻辑代码 ---
-
     function checkNewMessages() {
         if (!isAdmin || tidx !== null) return;
         const stack = document.getElementById('notifyStack');
@@ -221,54 +181,68 @@
         calls.forEach((msg, i) => {
             const div = document.createElement('div');
             div.className = `notify-item ${msg.type === 'coupon' ? 'coupon' : ''}`;
-            const timeTag = msg.timeStr ? `[${msg.timeStr}] ` : '';
-            div.innerHTML = `<span>${timeTag}<b>${msg.tableName}</b>: ${msg.content}</span>
+            div.innerHTML = `<span><b>${msg.tableName}</b>: ${msg.content}</span>
                 <button class="btn" style="background:white; color:var(--red); padding:4px;" onclick="removeNotify(${i})">完成</button>`;
             stack.appendChild(div);
         });
         if (calls.length > lastCallCount) {
-            const ut = new SpeechSynthesisUtterance("叮咚，有新的服务请求");
+            const ut = new SpeechSynthesisUtterance("有新的呼叫");
             ut.lang = 'zh-CN'; window.speechSynthesis.speak(ut);
         }
         lastCallCount = calls.length;
     }
 
-    function removeNotify(i) { calls.splice(i, 1); save(); }
+    function removeNotify(i) { calls.splice(i, 1); save(); lastCallCount = calls.length; checkNewMessages(); }
 
     function render() {
         if (!isAdmin || tidx !== null || isEditing) return;
         const grid = document.getElementById('tablesGrid');
+        const baseUrl = window.location.origin + window.location.pathname + "?id=" + BIN_ID;
         grid.innerHTML = tables.map((t, i) => {
             const res = calculate(t);
             return `<div class="card ${res.css}"><span class="del-btn" onclick="deleteTable(${i})">×</span>
+                <div style="font-size:9px; color:#999; word-break:break-all;">${baseUrl}&t=${i}</div>
                 <input style="border:none; background:transparent; font-weight:bold; font-size:1.1rem; width:80%;" value="${t.name}" onblur="tables[${i}].name=this.value; save()">
                 <div class="timer-display ${res.colorClass}">${res.time}</div>
                 <div class="cost-info">￥${res.cost}</div>
                 <div style="font-size:0.8rem;">价格: <input type="number" style="width:40px" value="${t.price}" onblur="tables[${i}].price=this.value; save()"> 元/h</div>
                 ${!t.startTime ? `<button class="btn btn-main" onclick="start(${i},'normal')">计时</button> <button class="btn btn-main" onclick="askPrepay(${i})">预付</button>` : 
-                `<button class="btn btn-danger" onclick="askCheckout(${i})">结账</button> <button class="btn btn-adjust" onclick="adjustTime(${i})">调时</button>`}</div>`;
+                `<div style="display:flex; gap:5px; margin-top:10px;">
+                    <button class="btn btn-warn" style="flex:1" onclick="togglePause(${i})">${t.isPaused?'恢复':'暂停'}</button>
+                    <button class="btn btn-danger" style="flex:1" onclick="askCheckout(${i})">结账</button>
+                </div>
+                <button class="btn btn-adjust" style="width:100%; margin-top:5px;" onclick="adjustTime(${i})">调时</button>`}</div>`;
         }).join('');
     }
 
     function calculate(t) {
         if (!t.startTime) return { time: "00:00:00", cost: "0.00", colorClass: "", status: "待机", css: "" };
-        let elapsed = Date.now() - t.startTime - (t.pausedMs || 0);
+        let now = t.isPaused ? t.lastPauseStart : Date.now();
+        let elapsed = now - t.startTime - (t.pausedMs || 0);
+        let css = t.isPaused ? "paused" : "";
         if (t.mode === 'normal') {
             let cost = (elapsed / 3600000 * t.price).toFixed(2);
-            return { time: msToT(elapsed), cost, colorClass: "color-orange", status: "计费中", css: "active-normal" };
+            return { time: msToT(elapsed), cost, colorClass: "color-orange", status: "计费中", css: css || "active-normal" };
         } else {
             let remain = t.limitMs - elapsed;
-            if (remain > 0) return { time: msToT(remain), cost: "0.00", colorClass: "color-green", status: "预付计费", css: "active-prepay" };
+            if (remain > 0) return { time: msToT(remain), cost: "0.00", colorClass: "color-green", status: "预付计费", css: css || "active-prepay" };
             let over = Math.abs(remain);
             let cost = (over / 3600000 * t.price).toFixed(2);
-            return { time: "超时 " + msToT(over), cost, colorClass: "color-red", status: "已超时", css: "active-over" };
+            return { time: "超时 " + msToT(over), cost, colorClass: "color-red", status: "已超时", css: css || "active-over" };
         }
     }
 
-    function start(i, mode, ms = 0) { tables[i].startTime = Date.now(); tables[i].mode = mode; tables[i].limitMs = ms; tables[i].pausedMs = 0; save(); render(); }
+    function togglePause(i) {
+        const t = tables[i]; if (!t.startTime) return;
+        if (!t.isPaused) { t.isPaused = true; t.lastPauseStart = Date.now(); }
+        else { t.pausedMs = (t.pausedMs || 0) + (Date.now() - t.lastPauseStart); t.isPaused = false; }
+        save(); render();
+    }
+
+    function start(i, mode, ms = 0) { tables[i].startTime = Date.now(); tables[i].mode = mode; tables[i].limitMs = ms; tables[i].pausedMs = 0; tables[i].isPaused = false; save(); render(); }
     function askPrepay(i) { const min = prompt("分钟:"); if(min) start(i, 'prepay', min*60000); }
-    function askCheckout(i) { if(confirm("确认结账？")) { tables[i].startTime = null; save(); render(); } }
-    function adjustTime(i) { const mins = prompt("加减分钟(如: 10 或 -10):"); if(mins) { tables[i].startTime -= parseFloat(mins)*60000; save(); render(); } }
+    function askCheckout(i) { if(confirm("确认结账？")) { tables[i].startTime = null; tables[i].isPaused = false; save(); render(); } }
+    function adjustTime(i) { const mins = prompt("加减分钟:"); if(mins) { tables[i].startTime -= parseFloat(mins)*60000; save(); render(); } }
     function addTable() { tables.push({name: (tables.length+1)+'号桌', price: 15}); save(); render(); }
     function deleteTable(i) { if(confirm("删除该桌位？")){ tables.splice(i,1); save(); render(); } }
     function addMember() { const acc = document.getElementById('mAcc').value; if (acc) { members[acc] = { name: document.getElementById('mName').value || '匿名', balance: (parseFloat(document.getElementById('mBal').value) || 0) }; save(); renderMembers(); } }
@@ -277,36 +251,41 @@
     function renderFaqs() { 
         const al = document.getElementById('faqAdminList'), cl = document.getElementById('custFaqList');
         if(al) al.innerHTML = faqs.map((f,i)=>`<div>${f.q} <button onclick="faqs.splice(${i},1);save();renderFaqs()">删</button></div>`).join('');
-        if(cl) cl.innerHTML = faqs.map(f=>`<div class="faq-item"><div class="faq-q">Q: ${f.q}</div><div class="faq-a">A: ${f.a}</div></div>`).join('');
+        if(cl) cl.innerHTML = faqs.map(f=>`<div style="margin-bottom:10px;"><div style="font-weight:bold; color:var(--primary);">Q: ${f.q}</div><div style="font-size:0.85rem; color:#666;">A: ${f.a}</div></div>`).join('');
     }
     function callService() { pushMsg("呼叫服务", "call"); }
     function requestCoupon() { const code = prompt("输入券码:"); if(code) pushMsg(code, "coupon"); }
     function pushMsg(content, type) { 
         const tableName = tables[tidx]?.name || "未知"; 
-        const d = new Date();
-        const ts = `${d.getHours()}:${d.getMinutes()}`;
-        calls.push({ tableName, content, type, timeStr: ts }); 
-        save(); alert("申请已发送"); 
+        calls.push({ tableName, content, type }); save(); alert("已发送申请"); 
     }
-    function toggleTheme() { let t = document.body.getAttribute('data-theme')==='light'?'dark':'light'; document.body.setAttribute('data-theme', t); localStorage.setItem('tp_theme', t); }
+    function adminLogin() { const input = prompt("管理密码"); if(input === (adminPass || MASTER_PASS)){ isAdmin=true; sessionStorage.setItem('isLoggedIn','true'); location.reload(); }}
     function logout() { sessionStorage.clear(); location.reload(); }
     function showLoading(s) { document.getElementById('syncStatus').style.display = s?'block':'none'; }
     function msToT(ms) { let s = Math.floor(Math.abs(ms) / 1000); return `${Math.floor(s/3600).toString().padStart(2,'0')}:${Math.floor((s%3600)/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
+    function checkAuth(cb) { const input = prompt("密码验证:"); if(input === (adminPass || MASTER_PASS)) cb(); else alert("密码错误"); }
 
-    // 初始化
     document.body.setAttribute('data-theme', localStorage.getItem('tp_theme') || 'light');
+    function toggleTheme() { let t = document.body.getAttribute('data-theme')==='light'?'dark':'light'; document.body.setAttribute('data-theme', t); localStorage.setItem('tp_theme', t); }
+
     cloudFetch();
+    setInterval(cloudFetch, 8000); // 降低频率防止封IP
     
-    if(isAdmin) { 
-        document.getElementById('adminArea').style.display='block'; 
-        document.getElementById('welcomeArea').style.display='none';
-        setInterval(render, 1000); 
-    }
-    if(tidx!==null) { 
-        document.getElementById('customerView').style.display='block'; 
-        document.getElementById('welcomeArea').style.display='none'; 
-    }
-    setInterval(cloudFetch, 8000);
+    // 关键修复：统一的定时渲染器（管理端和顾客端共用）
+    setInterval(() => {
+        if (isAdmin && tidx === null && !isEditing) render();
+        if (tidx !== null) {
+            const t = tables[tidx];
+            if (!t) return;
+            const res = calculate(t);
+            document.getElementById('cust-name').innerText = t.name;
+            document.getElementById('cust-timer').innerText = res.time;
+            document.getElementById('cust-timer').className = 'timer-display ' + res.colorClass;
+            document.getElementById('cust-cost').innerText = "待支付: ￥" + res.cost;
+            document.getElementById('cust-status').innerText = res.status;
+            document.getElementById('cust-status').className = res.colorClass;
+        }
+    }, 1000);
 </script>
 </body>
 </html>
