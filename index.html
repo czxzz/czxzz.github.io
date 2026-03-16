@@ -52,7 +52,11 @@
 <div id="adminArea">
     <div class="header">
         <h1 id="adminTitle">🎮 计时系统</h1>
-        <div><button class="btn" onclick="toggleTheme()">🌓 主题</button> <button class="btn btn-danger" onclick="logout()">退出</button></div>
+        <div>
+            <button class="btn" onclick="toggleTheme()">🌓 主题</button> 
+            <button class="btn" style="background:#00b894; color:white;" onclick="renameShop()">⚙️ 设置</button>
+            <button class="btn btn-danger" onclick="logout()">退出</button>
+        </div>
     </div>
     <div class="grid" id="tablesGrid"></div>
     <div style="text-align:center; margin:30px;"><button class="btn btn-main" onclick="addTable()">＋ 新增桌位</button></div>
@@ -110,11 +114,10 @@
 </div>
 
 <script>
-    // --- 动态配置区 ---
     const urlParams = new URLSearchParams(window.location.search);
     const BIN_ID = urlParams.get('id') || '9e9b10787a575a254601'; 
     const API_URL = `https://api.npoint.io/${BIN_ID}`;
-    const MASTER_PASS = urlParams.get('pw') || '3434'; // 允许通过URL传参修改临时管理密码
+    const MASTER_PASS = urlParams.get('pw') || '3434'; 
     
     let isAdmin = sessionStorage.getItem('isLoggedIn') === 'true';
     let tables = [], members = {}, calls = [], faqs = [], localTimestamp = 0, lastCallCount = 0, shopName = "躺平电玩";
@@ -141,7 +144,7 @@
                 renderFaqs();
                 checkNewMessages();
             }
-        } catch (e) { console.log("Fetch Error or New ID"); }
+        } catch (e) { console.log("Fetch Error"); }
         showLoading(false);
     }
 
@@ -149,6 +152,18 @@
         document.title = shopName;
         if(document.getElementById('adminTitle')) document.getElementById('adminTitle').innerText = "🎮 " + shopName;
         if(document.getElementById('welcomeTitle')) document.getElementById('welcomeTitle').innerText = "🎮 " + shopName;
+    }
+
+    function renameShop() {
+        checkAuth(() => {
+            const newName = prompt("请输入新的店铺名称：", shopName);
+            if (newName && newName.trim() !== "") {
+                shopName = newName.trim();
+                updateShopUI();
+                save();
+                alert("店名修改成功！");
+            }
+        });
     }
 
     async function save() {
@@ -234,7 +249,6 @@
     function render() {
         if (!isAdmin || tidx !== null || isEditing) return;
         const grid = document.getElementById('tablesGrid');
-        // 动态构建基础URL，带上当前的id
         const baseUrl = window.location.origin + window.location.pathname + "?id=" + BIN_ID;
         
         grid.innerHTML = tables.map((t, i) => {
